@@ -1,7 +1,7 @@
 # Publica la página web de la app (rutas compartidas con enlace) en GitHub Pages:
 #   https://<usuario>.github.io/rutas-galicia-mapas/r/?id=<número de la ruta>
 # Lleva una copia del catálogo para enseñar la ruta. Se publica al cambiar la web, cada
-# día (para recoger el catálogo nuevo), o a mano ("Run workflow").
+# vez que la fábrica publica un catálogo nuevo (escribe web/catalogo-fecha.txt), o a mano ("Run workflow").
 # Requisito (una sola vez): Settings → Pages → Source: "GitHub Actions".
 name: Publicar página web
 
@@ -9,10 +9,6 @@ on:
   push:
     branches: [main]
     paths: ["web/**", ".github/workflows/pagina-web.yml"]
-  # Cada día (GitHub solo deja publicar la web desde la rama principal, así que no
-  # puede lanzarse con el evento del Release): así recoge el catálogo nuevo.
-  schedule:
-    - cron: "41 7 * * *"
   workflow_dispatch:
 
 permissions:
