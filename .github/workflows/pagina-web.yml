@@ -1,0 +1,47 @@
+# Publica la página web de la app (rutas compartidas con enlace) en GitHub Pages:
+#   https://<usuario>.github.io/rutas-galicia-mapas/r/?id=<número de la ruta>
+# Lleva una copia del catálogo para enseñar la ruta. Se publica al cambiar la web, cada
+# vez que se publica un catálogo nuevo, o a mano ("Run workflow").
+# Requisito (una sola vez): Settings → Pages → Source: "GitHub Actions".
+name: Publicar página web
+
+on:
+  push:
+    branches: [main]
+    paths: ["web/**", ".github/workflows/pagina-web.yml"]
+  # Cada vez que se publica un catálogo nuevo (el Release "catalogo" se edita).
+  release:
+    types: [published, edited]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pagina-web
+  cancel-in-progress: true
+
+jobs:
+  publicar:
+    if: github.event_name != 'release' || github.event.release.tag_name == 'catalogo'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.despliegue.outputs.page_url }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Preparar la web con el catálogo
+        run: |
+          mkdir -p _site
+          cp -r web/. _site/
+          gh release download catalogo --pattern catalogo.json --dir _site --repo "$GITHUB_REPOSITORY"
+          touch _site/.nojekyll
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: despliegue
+        uses: actions/deploy-pages@v4

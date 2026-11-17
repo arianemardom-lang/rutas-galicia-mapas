@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Que los buscadores (Google…) no la muestren: solo la ve quien recibe el enlace -->
+<meta name="robots" content="noindex, nofollow, noarchive">
+<title>Ruta · Rutas Galicia</title>
+<meta name="description" content="Ruta de senderismo, trail y running en Galicia en la app Rutas Galicia.">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<style>
+  :root { --fondo:#F3F5F2; --pino:#1E5B44; --tinta:#14261E; --gris:#4A5A52; --ocre:#B4610B; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--fondo); color:var(--tinta);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 640px; margin: 0 auto; padding: 16px; }
+  .marca { display:flex; align-items:center; gap:10px; font-weight:700; color:var(--pino); }
+  .insignia { width:34px; height:34px; border-radius:50%; background:var(--pino); color:#fff;
+    display:grid; place-items:center; font-size:18px; }
+  h1 { font-size: 24px; margin: 18px 0 4px; line-height:1.2; }
+  .lugar { color: var(--gris); margin: 0 0 14px; }
+  .tarjeta { background:#fff; border-radius:20px; padding:14px; box-shadow:0 2px 8px rgba(20,38,30,.08); }
+  #mapa { height: 320px; border-radius: 20px; overflow:hidden; margin: 14px 0; }
+  .datos { display:grid; grid-template-columns: repeat(3, 1fr); gap: 8px; text-align:center; }
+  .valor { font-size: 20px; font-weight: 800; }
+  .etiqueta { font-size: 12px; color: var(--gris); }
+  .boton { display:block; text-align:center; text-decoration:none; background:var(--pino); color:#fff;
+    font-weight:700; font-size:17px; padding:16px; border-radius:18px; margin: 16px 0 8px; }
+  .nota { font-size: 13px; color: var(--gris); text-align:center; }
+  .aviso { background:#FCEBD8; color:#7a4207; border-radius:14px; padding:12px; font-size:14px; margin-top:12px; display:none; }
+  .fuente { font-size: 12px; color: var(--gris); margin-top: 18px; line-height:1.5; }
+  .fuente a { color: var(--gris); }
+</style>
+</head>
+<body>
+<main>
+  <div class="marca"><span class="insignia">⛰</span> Rutas Galicia</div>
+  <h1 id="nombre">Cargando la ruta…</h1>
+  <p class="lugar" id="lugar"></p>
+  <div class="tarjeta" id="tarjeta" hidden>
+    <div class="datos">
+      <div><div class="valor" id="km">–</div><div class="etiqueta">Distancia</div></div>
+      <div><div class="valor" id="subida">–</div><div class="etiqueta">Desnivel +</div></div>
+      <div><div class="valor" id="tiempo">–</div><div class="etiqueta">Andando (aprox.)</div></div>
+    </div>
+  </div>
+  <div id="mapa"></div>
+  <a class="boton" id="abrir" href="#">Abrir en la app Rutas Galicia</a>
+  <p class="nota">Con la app la puedes seguir sin cobertura, ver el tiempo y pasarla a tu reloj.</p>
+  <div class="aviso" id="sinApp">
+    Parece que no tienes la app instalada. Rutas Galicia todavía no está en las tiendas de
+    aplicaciones: pronto podrás descargarla.
+  </div>
+  <p class="fuente" id="fuente"></p>
+</main>
+<script>
+// Decodifica una línea en formato "polyline" (5 decimales) → [[lon, lat], …]
+function decodificar(texto) {
+  const puntos = []; let i = 0, lat = 0, lon = 0;
+  const leer = () => { let r = 0, d = 0, b; do { b = texto.charCodeAt(i++) - 63; r |= (b & 31) << d; d += 5; } while (b >= 32); return r & 1 ? ~(r >> 1) : r >> 1; };
+  while (i < texto.length) { lat += leer(); lon += leer(); puntos.push([lon / 1e5, lat / 1e5]); }
+  return puntos;
+}
+const km = (v) => (v < 10 ? v.toFixed(1) : Math.round(v)).toString().replace('.', ',') + ' km';
+// Tiempo andando (norma DIN 33466, igual que la app)
+function andando(r) {
+  const horizontal = r.distanciaKm / 4, vertical = r.desnivelPositivo / 300 + r.desnivelNegativo / 500;
+  const h = Math.max(horizontal, vertical) + Math.min(horizontal, vertical) / 2;
+  const min = Math.round(h * 60 / 5) * 5;
+  return `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')}`;
+}
+
+const id = Number(new URLSearchParams(location.search).get('id'));
+const enApp = `rutasgalicia://ruta/${id}`;
+const esAndroid = /android/i.test(navigator.userAgent);
+const abrir = document.getElementById('abrir');
+// En Android, si la app no está instalada vuelve a esta página con "#sinapp".
+abrir.href = esAndroid
+  ? `intent://ruta/${id}#Intent;scheme=rutasgalicia;package=com.arianemtnz.rutasgalicia;S.browser_fallback_url=${encodeURIComponent(location.href.split('#')[0] + '#sinapp')};end`
+  : enApp;
+if (location.hash === '#sinapp') document.getElementById('sinApp').style.display = 'block';
+
+fetch('../catalogo.json')
+  .then((r) => r.json())
+  .then((catalogo) => {
+    const r = catalogo.rutas.find((x) => x.id === id);
+    if (!r) { document.getElementById('nombre').textContent = 'No se ha encontrado esta ruta'; return; }
+    const nombre = r.ref && !r.nombre.includes(r.ref) ? `${r.nombre} (${r.ref})` : r.nombre;
+    document.title = `${nombre} · Rutas Galicia`;
+    document.getElementById('nombre').textContent = nombre;
+    document.getElementById('lugar').textContent = r.concellos.slice(0, 3).join(' · ');
+    document.getElementById('km').textContent = km(r.distanciaKm);
+    document.getElementById('subida').textContent = `${r.desnivelPositivo} m`;
+    document.getElementById('tiempo').textContent = andando(r);
+    document.getElementById('tarjeta').hidden = false;
+    document.getElementById('fuente').innerHTML =
+      (r.fuente === 'turismo'
+        ? 'Recorrido oficial del sendero homologado · Fuente: Turismo de Galicia (Xunta de Galicia). '
+        : 'Recorrido: © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>. ') +
+      'Datos orientativos: comprueba siempre el terreno y el tiempo antes de salir.';
+
+    const lineas = r.lineas.map(decodificar);
+    // Si el mapa no se puede dibujar, los datos de la ruta siguen a la vista.
+    if (typeof maplibregl === 'undefined') { document.getElementById('mapa').hidden = true; return; }
+    const mapa = new maplibregl.Map({
+      container: 'mapa',
+      style: {
+        version: 8,
+        sources: { osm: { type: 'raster', tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], tileSize: 256,
+          attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>' } },
+        layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
+      },
+      bounds: [[r.caja[0], r.caja[1]], [r.caja[2], r.caja[3]]],
+      fitBoundsOptions: { padding: 30 },
+      cooperativeGestures: true,
+    });
+    mapa.on('load', () => {
+      mapa.addSource('ruta', { type: 'geojson', data: { type: 'Feature', geometry: { type: 'MultiLineString', coordinates: lineas } } });
+      mapa.addLayer({ id: 'borde', type: 'line', source: 'ruta', paint: { 'line-color': '#fff', 'line-width': 7 }, layout: { 'line-cap': 'round', 'line-join': 'round' } });
+      mapa.addLayer({ id: 'linea', type: 'line', source: 'ruta', paint: { 'line-color': '#C2185B', 'line-width': 4 }, layout: { 'line-cap': 'round', 'line-join': 'round' } });
+      new maplibregl.Marker({ color: '#1E5B44' }).setLngLat(lineas[0][0]).addTo(mapa);
+    });
+  })
+  .catch(() => { document.getElementById('nombre').textContent = 'No se ha podido cargar la ruta'; });
+</script>
+</body>
+</html>
