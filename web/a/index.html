@@ -61,12 +61,16 @@
   <p class="fecha" id="fecha"></p>
   <div id="contenido" hidden>
     <div class="tarjeta"><div class="datos" id="datos"></div></div>
+    <div class="segmentado" id="vista">
+      <button data-vista="plano" class="activo">Plano</button>
+      <button data-vista="3d">3D (con relieve)</button>
+    </div>
     <div class="marco">
       <div id="mapa"></div>
       <div class="directo" id="directo"></div>
     </div>
     <div class="mandos">
-      <button class="play" id="play">▶ Ver el recorrido en 3D</button>
+      <button class="play" id="play">▶ Repetir el recorrido</button>
       <div class="chips" id="chips"></div>
     </div>
     <div class="segmentado" id="modos" hidden>
@@ -209,17 +213,29 @@ function mostrar(a) {
       },
       layers: [
         { id: 'osm', type: 'raster', source: 'osm' },
-        { id: 'sombras', type: 'hillshade', source: 'relieve', paint: { 'hillshade-exaggeration': .35 } },
+        { id: 'sombras', type: 'hillshade', source: 'relieve', layout: { visibility: 'none' }, paint: { 'hillshade-exaggeration': .35 } },
       ],
-      terrain: { source: 'relieve', exaggeration: 1.5 },
       sky: { 'sky-color': '#8EC5E8', 'horizon-color': '#E4EFEA', 'sky-horizon-blend': .7, 'horizon-fog-blend': .6, 'fog-color': '#E4EFEA', 'fog-ground-blend': .9 },
     },
     bounds: [[caja[0], caja[1]], [caja[2], caja[3]]],
     fitBoundsOptions: { padding: 40 },
-    pitch: 55,
+    pitch: 0,
     maxPitch: 80,
     cooperativeGestures: true,
   });
+  // Vista: "Plano" (desde arriba, como un mapa normal) o "3D" (inclinado, con relieve).
+  let en3D = false;
+  function aplicarVista() {
+    document.querySelectorAll('#vista button').forEach((b) => b.classList.toggle('activo', (b.dataset.vista === '3d') === en3D));
+    if (!mapa.isStyleLoaded()) return mapa.once('load', aplicarVista);
+    mapa.setTerrain(en3D ? { source: 'relieve', exaggeration: 1.5 } : null);
+    mapa.setLayoutProperty('sombras', 'visibility', en3D ? 'visible' : 'none');
+    if (!repitiendo) mapa.fitBounds([[caja[0], caja[1]], [caja[2], caja[3]]], { padding: 40, pitch: en3D ? 55 : 0, bearing: 0, duration: 900 });
+  }
+  document.querySelectorAll('#vista button').forEach((b) => b.addEventListener('click', () => {
+    en3D = b.dataset.vista === '3d';
+    aplicarVista();
+  }));
   // Si el relieve no carga, el mapa se ve plano (pero se ve).
   mapa.on('error', (e) => { if (e.sourceId === 'relieve' && mapa.getTerrain()) mapa.setTerrain(null); });
   mapa.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'bottom-right');
@@ -281,7 +297,9 @@ function mostrar(a) {
     while (j < n - 1 && P[j + 1][3] <= virtual) j++;
     let k = j; while (k < n - 1 && P[k][6] - P[j][6] < 60) k++;
     if (k !== j) { let d = rumboEntre(P[j], P[k]) - rumbo; d = ((d + 540) % 360) - 180; rumbo = (rumbo + d * .06 + 360) % 360; }
-    mapa.jumpTo({ center: [P[j][0], P[j][1]], bearing: rumbo, pitch: 62, zoom: 15.3 });
+    mapa.jumpTo(en3D
+      ? { center: [P[j][0], P[j][1]], bearing: rumbo, pitch: 62, zoom: 15.3 }
+      : { center: [P[j][0], P[j][1]], bearing: 0, pitch: 0, zoom: 15 });
     if (ahora - ultimoDibujo > 120) {
       ultimoDibujo = ahora; marcado = j;
       mapa.getSource('hecho').setData(lineas(j));
@@ -304,12 +322,12 @@ function mostrar(a) {
   }
   function parar() {
     repitiendo = false; marcado = null;
-    $('play').textContent = '▶ Ver el recorrido en 3D'; $('play').classList.remove('parar'); $('directo').classList.remove('visible');
+    $('play').textContent = '▶ Repetir el recorrido'; $('play').classList.remove('parar'); $('directo').classList.remove('visible');
     mapa.setPaintProperty('noche', 'background-opacity', 0);
     mapa.setPaintProperty('linea', 'line-opacity', 1);
     mapa.setPaintProperty('borde', 'line-opacity', 1);
     for (const s of ['hecho', 'estela', 'punto']) mapa.getSource(s).setData({ type: 'FeatureCollection', features: [] });
-    mapa.fitBounds([[caja[0], caja[1]], [caja[2], caja[3]]], { padding: 40, pitch: 55, bearing: 0, duration: 1200 });
+    mapa.fitBounds([[caja[0], caja[1]], [caja[2], caja[3]]], { padding: 40, pitch: en3D ? 55 : 0, bearing: 0, duration: 1200 });
     dibujarPerfil();
   }
   $('play').addEventListener('click', () => (repitiendo ? parar() : empezar()));
